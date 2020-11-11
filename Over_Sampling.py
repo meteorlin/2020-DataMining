@@ -34,3 +34,5 @@ def func_over_sampling(start=1, end):
     data_over_sampling = pd.concat([pd.concat([data_0, data_2_over_sampling]), data_1_over_sampling])
     
     data_over_sampling.to_csv('over_sampling.csv', index=False, encoding='utf8', sep=' ', header=None)
+
+    
