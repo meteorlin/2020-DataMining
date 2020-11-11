@@ -35,4 +35,4 @@ def func_over_sampling(start=1, end):
     
     data_over_sampling.to_csv('over_sampling.csv', index=False, encoding='utf8', sep=' ', header=None)
 
-    
+  
