@@ -207,18 +207,11 @@ def get_train_data(num, start=None, end=None):
 
 
 if __name__ == "__main__":
-
-    # train_path = 'traffic_20190701.txt'
-    # test_path = 'test.txt'
-    # gen_feats(train_path, mode='is_train')
-    # gen_feats(test_path, mode='is_test')
-
     attr = pd.read_csv('attribute.txt', sep='\t',
                        names=['link', 'length', 'direction', 'path_class', 'speed_class', 'LaneNum', 'speed_limit',
                               'level', 'width'], header=None)  # 道路属性特征
 
     train = get_train_data(1, 7)  # 提取基本特征后的路况数据（使用gen_feats()函数）
-    # train = pd.read_csv("is_train_over_mix_under_sampling_1.csv")  # 重采样后的路况数据
     test = pd.read_csv('is_test.csv')
     train = train.merge(attr, on='link', how='left')
     test = test.merge(attr, on='link', how='left')
@@ -228,3 +221,6 @@ if __name__ == "__main__":
     sub = lgb_train(train, test, use_cols, 'link', 'label', 5, 2020, 4, 2.5, 1)
 
     sub.to_csv('public_baseline.csv', index=False, encoding='utf8')
+
+
+        
