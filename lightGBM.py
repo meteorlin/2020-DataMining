@@ -6,6 +6,7 @@ from sklearn.metrics import classification_report, f1_score
 import lightgbm as lgb
 from collections import Counter
 import warnings
+from imblearn.over_sampling import SMOTE
 
 warnings.filterwarnings("ignore")
 
@@ -23,7 +24,7 @@ def get_eta(x):
 
 
 def get_state(x):
-    return [int(i.split(',')[2]) for i in x]
+    return [int(i.split(',')[2]) for i in x]  # 未处理特殊状态0和4！
 
 
 def get_cnt(x):
@@ -97,11 +98,11 @@ def f1_score_eval(preds, valid_df):
 # 样本权重设置
 def set_weight(x, a, b, c):
     if x == 2:
-        return a
+        return c
     elif x == 1:
         return b
     else:
-        return c
+        return a
 
 
 def lgb_train(train_: pd.DataFrame, test_: pd.DataFrame, use_train_feats: list, id_col: str, label: str,
@@ -164,7 +165,6 @@ def lgb_train(train_: pd.DataFrame, test_: pd.DataFrame, use_train_feats: list, 
             train_set=dtrain,
             num_boost_round=5000,
             valid_sets=[dvalid],
-            valid_names=['valid'],
             early_stopping_rounds=100,  # "valid_0": 第一个验证集
             verbose_eval=100,
             feval=f1_score_eval
@@ -177,9 +177,21 @@ def lgb_train(train_: pd.DataFrame, test_: pd.DataFrame, use_train_feats: list, 
 
     report = f1_score(train_[label], train_[f'{label}_pred'], average=None)
     print(classification_report(train_[label], train_[f'{label}_pred'], digits=4))  # 'support': 类别样本数
-    print('F1_Score: ', report[0] * 0.2 + report[1] * 0.2 + report[2] * 0.6)
+    print(f'<{a}/{b}/{c}>', 'F1_Score: ', report[0] * 0.2 + report[1] * 0.2 + report[2] * 0.6)
     test_[f'{label}_pred'] = np.argmax(test_pred, axis=1)
     test_[label] = np.argmax(test_pred, axis=1) + 1
+
+    # 阈值移动
+    # threshold_moving = []
+    # for row in test_pred:
+    #     if (3.8 + 1) / 22.95 * row[0] / (1 - row[0]) > 1:
+    #         threshold_moving.append(1)
+    #     elif (1 + 22.95) / 3.8 * row[1] / (1 - row[1]) > 1:
+    #         threshold_moving.append(2)
+    #     else:
+    #         threshold_moving.append(3)
+    # test_[label] = np.array(threshold_moving)
+
     five_folds = [f'fold_{f}_imp' for f in range(1, n_splits + 1)]
     fold_importance_df['avg_imp'] = fold_importance_df[five_folds].mean(axis=1)
     fold_importance_df.sort_values(by='avg_imp', ascending=False, inplace=True)
@@ -200,27 +212,78 @@ def get_train_data(num, start=None, end=None):
         else:
             day = str(i)
         file_name = "is_train_201907" + day + '.txt'
-        print(f"start import {file_name} ...")
+        print(f"start read {file_name} ...")
         df = pd.read_csv(file_name)
         data = pd.concat([data, df])  # 行拼接
     return data
 
 
 if __name__ == "__main__":
+
+    # train_path = 'traffic_20190701.txt'
+    # test_path = '20190801_testdata.txt'
+    # gen_feats(train_path, mode='is_train')
+    # gen_feats(test_path, mode='is_test')
+
+    # assert(1 == 0)  # 强行中断
+
     attr = pd.read_csv('attribute.txt', sep='\t',
                        names=['link', 'length', 'direction', 'path_class', 'speed_class', 'LaneNum', 'speed_limit',
-                              'level', 'width'], header=None)  # 道路属性特征
+                              'level', 'width'], header=None)  # 道路属性
+    # print(attr['link'])  # in64
 
-    train = get_train_data(1, 7)  # 提取基本特征后的路况数据（使用gen_feats()函数）
-    test = pd.read_csv('is_test.csv')
+    link_static_profiling = pd.read_csv("link_his_fea_no_neighbor.csv", sep=',')  # link静态画像信息
+    print(link_static_profiling[link_static_profiling.isnull().T.any()])
+    word2vec_info = pd.read_csv("word2vec_test_3.csv", header=None)  # DeepWork
+    word2vec_info['link'] = word2vec_info[0].apply(lambda x: x.split(" ")[0])
+    word2vec_info['link'] = word2vec_info['link'].apply(int)  # 类型转换
+    for i in range(100):
+        col_name = 'vec' + str(i)
+        word2vec_info[col_name] = word2vec_info[0].apply(lambda x: x.split(" ")[i + 1])
+        word2vec_info[col_name] = word2vec_info[col_name].apply(float)  # 类型转换
+    del word2vec_info[0]
+    print(word2vec_info)
+
+    # assert(1 == 0)  # 强行中断
+
+    train = get_train_data(5)  # 提取基本特征后的路况训练数据
+    # train = pd.read_csv("is_train_over_mix_under_sampling_1.csv")  # 重采样后的路况数据
+    test = pd.read_csv('is_test.csv')  # 提取基本特征后的路况测试数据
+
     train = train.merge(attr, on='link', how='left')
     test = test.merge(attr, on='link', how='left')
 
+    train = train.merge(link_static_profiling, on='link', how='left')
+    test = test.merge(link_static_profiling, on='link', how='left')
+    print("train", train[train.isnull().T.any()])  # 检测训练集每行是否有空值
+    print("test", test[test.isnull().T.any()])  # 检测测试集每行是否有空值
+
+    train = train.merge(word2vec_info, on='link', how='left')
+    test = test.merge(word2vec_info, on='link', how='left')
+
+    # NAN值填充
+    train = train.fillna(value=0)
+    test = test.fillna(value=0)
+
     use_cols = [i for i in train.columns if i not in ['link', 'label', 'current_slice_id', 'label_pred']]
 
-    sub = lgb_train(train, test, use_cols, 'link', 'label', 5, 2020, 4, 2.5, 1)
+    # for a in tqdm(np.arange(1.5, 2.5, 0.1)):
+    #     for b in tqdm(np.arange(1.5, 2, 0.1)):
+    #         sub = lgb_train(train, test, use_cols, 'link', 'label', 5, 2020, 1, a, a *b)
 
+    # SMOTE；link作为重采样输入特征之一
+    # model_smote = SMOTE()  # 建立smote模型对象
+    # x, y = train.loc[train.index, [col for col in train.columns if col not in ['label', 'label_pred', 'current_slice_id']]], train.loc[train.index, 'label']
+    # x_smote_sample, y_smote_sample = model_smote.fit_sample(x, y)
+    # x_smote_sample = pd.DataFrame(x_smote_sample, columns=[col for col in train.columns if col not in ['label', 'label_pred', 'current_slice_id']])
+    # y_smote_sample = pd.DataFrame(y_smote_sample, columns=['label'])
+    # smote_sample = pd.concat([x_smote_sample, y_smote_sample], axis=1)
+    # print(smote_sample)
+    # groupBy_data_smote = smote_sample.groupby('label').count()
+    # print(groupBy_data_smote)
+    # train = smote_sample
+
+    sub = lgb_train(train, test, use_cols, 'link', 'label', 5, 2020, 1, 2.5, 4)
     sub.to_csv('public_baseline.csv', index=False, encoding='utf8')
 
 
-        
