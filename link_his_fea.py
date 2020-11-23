@@ -14,8 +14,10 @@ def get_statelist(feature1, feature2, feature3, feature4, feature5):
     count0 = state.count(0)
     count1 = state.count(1)
     count2 = state.count(2)
+    count3 = state.count(3)
+    count4 = state.count(4)
 
-    return [count0, count1, count2]
+    return [count0, count1, count2, count3, count4]
 
 def get_speedlist(f1, f2, f3, f4, f5):
     speed = []
@@ -52,6 +54,8 @@ def gen_his_fea(path, dic_link_his, mode='is_train'):
     df['state_0_count'] = df['state_list'].apply(lambda x: x[0])
     df['state_1_count'] = df['state_list'].apply(lambda x: x[1])
     df['state_2_count'] = df['state_list'].apply(lambda x: x[2])
+    df['state_3_count'] = df['state_list'].apply(lambda x: x[3])
+    df['state_4_count'] = df['state_list'].apply(lambda x: x[4])
     del df['state_list']
 
     # 历史speed最大最小平均
@@ -87,6 +91,8 @@ def gen_his_fea(path, dic_link_his, mode='is_train'):
             row['0_count'] += group['state_0_count'].sum()
             row['1_count'] += group['state_1_count'].sum()
             row['2_count'] += group['state_2_count'].sum()
+            row['3_count'] += group['state_3_count'].sum()
+            row['4_count'] += group['state_4_count'].sum()
             row['avg_speed'] = (group['speed_mean'].mean() + row['avg_speed']) / 2
             row['max_speed'] = max(group['speed_max'].max(), row['max_speed'])
             row['min_speed'] = min(group['speed_min'].min(), row['min_speed'])
@@ -101,6 +107,8 @@ def gen_his_fea(path, dic_link_his, mode='is_train'):
                 '0_count': group['state_0_count'].sum(),
                 '1_count': group['state_1_count'].sum(),
                 '2_count': group['state_2_count'].sum(),
+                '3_count': group['state_3_count'].sum(),
+                '4_count': group['state_4_count'].sum(),
                 'avg_speed': group['speed_mean'].mean(),
                 'max_speed': group['speed_max'].max(),
                 'min_speed': group['speed_min'].min(),
@@ -114,39 +122,38 @@ def gen_his_fea(path, dic_link_his, mode='is_train'):
             dic_link_his[link] = new
     return dic_link_his
 
-    
-        
+
+'''
+dic_link_his = {
+    linkid: {
+                0_count: n, 
+                1_count: n, 
+                2_count: n,
+                3_count: n, 
+                4_count: n, 
+                avg_speed: n, 
+                max_speed: n, 
+                min_speed: n,
+                avg_eta: n,  
+                max_eta: n,
+                min_eta:n,
+                avg_cnt: n,
+                max_cnt: n,
+                min_cnt n:
+            }
+
+}
+'''
 if __name__ == '__main__':
-
     dic_link_his = {}
-    '''
-    dic_link_his = {
-        linkid: {
-                    0_count: n, 
-                    1_count: n, 
-                    2_count: n, 
-                    avg_speed: n, 
-                    max_speed: n, 
-                    min_speed: n,
-                    avg_eta: n,  
-                    max_eta: n,
-                    min_eta:n,
-                    avg_cnt: n,
-                    max_cnt: n,
-                    min_cnt n:
-                }
-
-    }
-    '''
-    
     # 读取存放数据集的文件夹
-    rootdir = 'D:/Study/Research/CCF BDCI 2020/数据集/traffic'
+    rootdir = '/data/cty/CCF_BDCI/数据集/traffic'
     lst = os.listdir(rootdir)              # 列出文件夹下所有的目录与文件
     for i in tqdm(range(len(lst))):
         path = os.path.join(rootdir, lst[i])
         if os.path.isfile(path):
             dic_link_his =  gen_his_fea(path, dic_link_his)
 
-    f = open('./his/link_his_dic.pkl', 'wb')         
-    pickle.dump(dic_link_his, f, pickle.HIGHEST_PROTOCOL)    
+    f = open('/data/cty/CCF_BDCI/his/link_his_dic.pkl', 'wb')
+    pickle.dump(dic_link_his, f, pickle.HIGHEST_PROTOCOL)
     f.close()
