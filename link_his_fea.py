@@ -154,6 +154,7 @@ if __name__ == '__main__':
         if os.path.isfile(path):
             dic_link_his =  gen_his_fea(path, dic_link_his)
 
+            
     f = open('/data/cty/CCF_BDCI/his/link_his_dic.pkl', 'wb')
     pickle.dump(dic_link_his, f, pickle.HIGHEST_PROTOCOL)
     f.close()
