@@ -78,14 +78,14 @@ data_date = 20190723  # 根据需要进行分布测试的训练集数据的日�
 path = './'  # 路径是存放生成好的训练集和测试集基础特征的路径
 
 if os.path.exists(f'{path}is_train_{data_date}.csv'):
-	train_fea = f'{path}is_train_{data_date}.csv'
+    train_fea = f'{path}is_train_{data_date}.csv'
 else:
-	train_fea = gen_feats(f"traffic/{data_date}.txt")
+    train_fea = gen_feats(f"traffic/{data_date}.txt")
 print('train_fea already')
 if os.path.exists(f'{path}is_test.csv'):
-	test_fea = f'{path}is_test.csv'
+    test_fea = f'{path}is_test.csv'
 else:
-	test_fea = gen_feats(f"test.txt", mode='is_test')
+    test_fea = gen_feats(f"test.txt", mode='is_test')
 print('test_fea already')
 
 
