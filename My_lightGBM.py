@@ -15,6 +15,7 @@ warnings.filterwarnings("ignore")
 
 def f1_score_eval(preds, valid_df):
     labels = valid_df.get_label()
+    # print(labels, preds)
     scores = f1_score(y_true=labels, y_pred=np.argmax(preds.reshape(3, -1), axis=0), average=None)
     scores = scores[0] * 0.2 + scores[1] * 0.2 + scores[2] * 0.6
     return 'f1_score', scores, True
@@ -72,8 +73,7 @@ def lgb_train(train_: pd.DataFrame, valid_: pd.DataFrame, test_: pd.DataFrame, u
     else:
         df_train = lgb.Dataset(train_x, label=train_y,
                                weight=train_y.apply(set_weight, a=a, b=b, c=c))
-        df_valid = lgb.Dataset(valid_x, label=valid_y,
-                               weight=valid_y.apply(set_weight, a=a, b=b, c=c))  # 验证集也设置样本权重？
+        df_valid = lgb.Dataset(valid_x, label=valid_y)  # 验证集也设置样本权重？
 
     clf = lgb.train(
         params=params,
@@ -87,7 +87,10 @@ def lgb_train(train_: pd.DataFrame, valid_: pd.DataFrame, test_: pd.DataFrame, u
     )
 
     test_pred = clf.predict(test_[use_train_feats], num_iteration=clf.best_iteration)
-    clf.save_model(f'./save_models/model')
+    test_['1_pred_prob'] = test_pred[:, 0]
+    test_['2_pred_prob'] = test_pred[:, 1]
+    test_['3_pred_prob'] = test_pred[:, 2]
+    clf.save_model(f'./save_models/model_without_deepwalk')
     # print(test_pred, type(test_pred))
     test_[label] = np.argmax(test_pred, axis=1) + 1
     importance_df[f'imp'] = clf.feature_importance(importance_type='gain')
@@ -96,7 +99,7 @@ def lgb_train(train_: pd.DataFrame, valid_: pd.DataFrame, test_: pd.DataFrame, u
     valid_pred = np.argmax(clf.predict(valid_x, num_iteration=clf.best_iteration), axis=1)
     print(classification_report(valid_y, valid_pred, digits=4))
     test_['future_slice_id'] = test_['future_slice_id_substitute']  # 恢复
-    return test_[[id_col, 'current_slice_id', 'future_slice_id', label]]
+    return test_[[id_col, 'current_slice_id', 'future_slice_id', label]], test[[id_col, '1_pred_prob', '2_pred_prob', '3_pred_prob']]
 
 
 def get_train_data(num, start=None, end=None):
@@ -120,23 +123,72 @@ def get_train_data(num, start=None, end=None):
 
 if __name__ == "__main__":
 
+    valid_select = {'20190726': 5241
+        , '20190727': 4876, '20190728': 5260, '20190729': 5367, '20190730': 5344
+                    }
+    valid = pd.DataFrame()
+    for valid_day, n_row in valid_select.items():
+        valid_tmp = pd.read_csv(f"is_train_{valid_day}.txt")  # 基本特征
+        lstm_feats = pd.read_feather(f"lstm/lstm_feats_{valid_day}.ft")  # lstm特征
+        valid_tmp = pd.concat([valid_tmp, lstm_feats], axis=1)
+        valid_tmp['id'] = range(0, valid_tmp.shape[0])
+        valid_row = pd.read_csv(f"lstm/test_distribution/adversarial_validation_{valid_day}.csv", nrows=n_row)
+        valid_tmp = valid_tmp.merge(valid_row, on='id', how='right')
+        valid_tmp.drop(['id', 'preds'], axis=1, inplace=True)
+        valid = pd.concat([valid, valid_tmp], axis=0, ignore_index=True)
+    del valid_tmp, valid_row, lstm_feats
+    # valid.to_csv("lstm_valid_set.csv")
+
+    assert(1 == 0)
+
+    train = pd.read_csv("is_train_20190704.txt")
+    lstm_feats = pd.read_feather(f"lstm/lstm_feats_20190704.ft")
+    train = pd.concat([train, lstm_feats], axis=1)
+    test = pd.read_csv("is_test.csv")
+    lstm_feats = pd.read_feather(f"lstm/lstm_feats_test.ft")
+    test = pd.concat([test, lstm_feats], axis=1)
+
+    # 旧版lstm特征
+    # train = pd.read_csv("train_set_20190704.csv")
+    # test = pd.read_csv("test_set.csv")
+    # valid = pd.read_csv("valid_set_lstm.csv")
+
+    # 无lstm特征
+    # train = get_train_data(1, 4)
+    # # train = train.sample(frac=1.0)  # 数据打乱！
+    # # print(Counter(train['label']))
+    # valid = pd.read_csv("valid_set.csv")  # 验证集（仅供评估模型性能，不会直接影响训练过程，但可以通过人为“调参”间接影响训练过程）
+    # test = pd.read_csv('is_test.csv')  # 线上测试集
+
     attr = pd.read_csv('attribute.txt', sep='\t',
                        names=['link', 'length', 'direction', 'path_class', 'speed_class', 'LaneNum', 'speed_limit',
                               'level', 'width'], header=None)  # 道路属性
+    
     link_static_profiling = pd.read_csv("link_his_fea_no_neighbor.csv", sep=',')  # link静态画像信息
-    word2vec_info = pd.read_csv("word2vec_test_3.csv", header=None)  # DeepWalk
-    word2vec_info['link'] = word2vec_info[0].apply(lambda x: x.split(" ")[0])
-    word2vec_info['link'] = word2vec_info['link'].apply(int)  # 类型转换
-    for i in range(100):
-        col_name = 'vec' + str(i)
-        word2vec_info[col_name] = word2vec_info[0].apply(lambda x: float(x.split(" ")[i + 1]))
-        # word2vec_info[col_name] = word2vec_info[col_name].apply(float)  # 类型转换
-    del word2vec_info[0]
-    print(word2vec_info)
+    
+    # word2vec_info = pd.read_csv("word2vec_test_3.csv", header=None)  # DeepWalk
+    # word2vec_info['link'] = word2vec_info[0].apply(lambda x: x.split(" ")[0])
+    # word2vec_info['link'] = word2vec_info['link'].apply(int)  # 类型转换
+    # for i in range(100):
+    #     col_name = 'vec' + str(i)
+    #     word2vec_info[col_name] = word2vec_info[0].apply(lambda x: float(x.split(" ")[i + 1]))
+    #     # word2vec_info[col_name] = word2vec_info[col_name].apply(float)  # 类型转换
+    # del word2vec_info[0]
+    # word2vec_info.to_csv("deepwalk_features.csv", index=False, encoding='utf8')
+    # 直接从文件读取
+    word2vec_info = pd.read_csv("deepwalk_features.csv")  # DeepWalk
+    # print(word2vec_info)
 
-    link_sum = pd.read_csv("link_time_table_10.csv")
-    link_sum.columns = ['link', 'future_slice_id', 'cnt', '0_prob', '1_prob', '2_prob', '3_prob', '4_prob']
-    # link_sum.drop(index=(len(link_sum) - 1), inplace=True)  # 删除最后一行NAN值
+    # 天岳
+    # link_sum = pd.read_csv("link_time_table_10.csv")
+    # link_sum.columns = ['link', 'future_slice_id', 'cnt', '0_prob', '1_prob', '2_prob', '3_prob', '4_prob']
+    link_sum_5 = pd.read_csv("link_time_table_5.csv")
+    link_sum_5.columns = ['link', 'future_slice_id', 'cnt', '0_prob', '1_prob', '2_prob', '3_prob', '4_prob']
+    link_sum_2 = pd.read_csv("link_time_table_2.csv")
+    link_sum_2.columns = ['link', 'future_slice_id', 'cnt', '0_prob', '1_prob', '2_prob', '3_prob', '4_prob']
+    # 乐天
+    link_sum = pd.read_csv("df_sum_table.csv")
+    link_sum.drop(index=(len(link_sum) - 1), inplace=True)  # 删除最后一行NAN值
     link_sum['link'] = link_sum['link'].astype(int)
     link_sum['future_slice_id'] = link_sum['future_slice_id'].astype(int)
     print("---1---\n", link_sum['link'][:5], link_sum['future_slice_id'][:5])
@@ -156,15 +208,26 @@ if __name__ == "__main__":
     print("---3---\n", link_down_sum['link'][:5], link_down_sum['future_slice_id'][:5])
     print(link_down_sum.columns)
 
-    # train = get_train_data(1)
-    # # train = train.sample(frac=1.0)  # 数据打乱！
-    # # print(Counter(train['label']))
-    # valid = pd.read_csv("valid_set.csv")  # 验证集（仅供评估模型性能，不会直接影响训练过程，但可以通过人为“调参”间接影响训练过程）
-    # test = pd.read_csv('is_test.csv')  # 线上测试集
+    link_up_topology = pd.read_csv("df_mean_jupyter_tol_up_new2.csv")
+    print(link_up_topology.columns)
+    # link_up_topology.drop(index=(len(link_up_topology) - 1), inplace=True)  # 删除最后一行NAN值
+    link_up_topology['link'] = link_up_topology['link'].astype(int)
+    link_up_topology['future_slice_id'] = link_up_topology['future_slice_id'].astype(int)
+    print("---4---\n", link_up_topology['link'][:5], link_up_topology['future_slice_id'][:5])
+    del link_up_topology['label']
+    del link_up_topology['time_diff']
+    del link_up_topology['future_slice_id_real']
 
-    train = pd.read_csv("train_set_20190704.csv")
-    test = pd.read_csv("test_set.csv")
-    valid = pd.read_csv("valid_set_lstm.csv")
+    link_down_topology = pd.read_csv("df_mean_jupyter_tol_down_new3.csv")
+    print(link_down_topology.columns)
+    # link_down_topology.drop(index=(len(link_down_topology) - 1), inplace=True)  # 删除最后一行NAN值
+    link_down_topology['link'] = link_down_topology['link'].astype(int)
+    link_down_topology['link'] = link_down_topology['link'].astype(int)
+    link_down_topology['future_slice_id'] = link_down_topology['future_slice_id'].astype(int)
+    print("----5---\n", link_down_topology['link'][:5], link_down_topology['future_slice_id'][:5])
+    del link_down_topology['label']
+    del link_down_topology['time_diff']
+    del link_down_topology['future_slice_id_real']
 
     train['future_slice_id_substitute'] = train['future_slice_id']  # 另存
     train['future_slice_id'] = train['future_slice_id'].apply(lambda x: x / 10).astype(int)  # 桶
@@ -197,6 +260,30 @@ if __name__ == "__main__":
     test = test.merge(link_down_sum, on=['link', 'future_slice_id'], how='left')
     valid = valid.merge(link_down_sum, on=['link', 'future_slice_id'], how='left')
 
+    train = train.merge(link_up_topology, on=['link', 'future_slice_id'], how='left')
+    test = test.merge(link_up_topology, on=['link', 'future_slice_id'], how='left')
+    valid = valid.merge(link_up_topology, on=['link', 'future_slice_id'], how='left')
+
+    train = train.merge(link_down_topology, on=['link', 'future_slice_id'], how='left')
+    test = test.merge(link_down_topology, on=['link', 'future_slice_id'], how='left')
+    valid = valid.merge(link_down_topology, on=['link', 'future_slice_id'], how='left')
+
+    # 时间桶：5
+    train['future_slice_id'] = train['future_slice_id_substitute'].apply(lambda x: x / 5).astype(int)
+    test['future_slice_id'] = test['future_slice_id_substitute'].apply(lambda x: int(x / 5))
+    valid['future_slice_id'] = valid['future_slice_id_substitute'].apply(lambda x: int(x / 5))
+    train = train.merge(link_sum_5, on=['link', 'future_slice_id'], how='left')
+    test = test.merge(link_sum_5, on=['link', 'future_slice_id'], how='left')
+    valid = valid.merge(link_sum_5, on=['link', 'future_slice_id'], how='left')
+
+    # 时间桶：2
+    # train['future_slice_id'] = train['future_slice_id_substitute'].apply(lambda x: x / 2).astype(int)
+    # test['future_slice_id'] = test['future_slice_id_substitute'].apply(lambda x: int(x / 2))
+    # valid['future_slice_id'] = valid['future_slice_id_substitute'].apply(lambda x: int(x / 2))
+    # train = train.merge(link_sum_2, on=['link', 'future_slice_id'], how='left')
+    # test = test.merge(link_sum_2, on=['link', 'future_slice_id'], how='left')
+    # valid = valid.merge(link_sum_2, on=['link', 'future_slice_id'], how='left')
+
     train_nan_col = train.isnull().sum(axis=0)
     test_nan_col = test.isnull().sum(axis=0)
     train_nan_col.to_csv("train_nan_col_partial_lstm.csv", index=False, encoding='utf8')
@@ -204,11 +291,26 @@ if __name__ == "__main__":
     pd.DataFrame(train.columns).to_csv("Features_partial_lstm.csv", index=False, encoding='utf-8')
 
     # NAN值填充
-    train = train.fillna(value=0)
-    valid = valid.fillna(value=0)
-    test = test.fillna(value=0)
+    # 1、填充0
+    # train = train.fillna(value=0)
+    # valid = valid.fillna(value=0)
+    # test = test.fillna(value=0)
+    # 2、插值
+    # train = train.interpolate(method='linear', axis=0)  # 列值插入
+    # valid = valid.interpolate(method='linear', axis=0)
+    # test = test.interpolate(method='linear', axis=0)
+    # 3、均值
+    for column in list(train.columns[train.isnull().sum(axis=0) > 0]):
+        mean_val = train[column].mean()
+        train[column].fillna(mean_val, inplace=True)
+    for column in list(test.columns[test.isnull().sum(axis=0) > 0]):
+        mean_val = test[column].mean()
+        test[column].fillna(mean_val, inplace=True)
+    for column in list(valid.columns[valid.isnull().sum(axis=0) > 0]):
+        mean_val = valid[column].mean()
+        valid[column].fillna(mean_val, inplace=True)
 
-    use_cols = [i for i in train.columns if i not in ['link', 'label', 'current_slice_id']]
+    use_cols = [i for i in train.columns if i not in ['link', 'label', 'current_slice_id', 'future_slice_id']]  # future_slice_id已有替代特征
 
     # 过采样SMOTE：link不作为特征之一
     # model_smote = SMOTE()  # 建立smote模型对象
@@ -254,7 +356,7 @@ if __name__ == "__main__":
     # result = test[['link', 'current_slice_id', 'future_slice_id', 'label']]
     # result.to_csv('Adaboost_model_result.csv', index=False, encoding='UTF-8')
 
-    sub = lgb_train(train, valid, test, use_cols, 'link', 'label', 1, 2.5, 4)
-
-    sub.to_csv('public_baseline_plus_lstm.csv', index=False, encoding='utf8')
+    sub, label_probs = lgb_train(train, valid, test, use_cols, 'link', 'label', 1, 2.5, 4)
+    label_probs.to_csv("label_pred_probability.csv", index=False, encoding='utf8')
+    sub.to_csv('public_baseline_plus_lstm_without_deepwalk.csv', index=False, encoding='utf8')
 
