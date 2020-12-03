@@ -90,7 +90,7 @@ def lgb_train(train_: pd.DataFrame, valid_: pd.DataFrame, test_: pd.DataFrame, u
     test_['1_pred_prob'] = test_pred[:, 0]
     test_['2_pred_prob'] = test_pred[:, 1]
     test_['3_pred_prob'] = test_pred[:, 2]
-    clf.save_model(f'./save_models/model_without_deepwalk')
+    clf.save_model(f'./save_models/model')
     # print(test_pred, type(test_pred))
     test_[label] = np.argmax(test_pred, axis=1) + 1
     importance_df[f'imp'] = clf.feature_importance(importance_type='gain')
@@ -99,7 +99,8 @@ def lgb_train(train_: pd.DataFrame, valid_: pd.DataFrame, test_: pd.DataFrame, u
     valid_pred = np.argmax(clf.predict(valid_x, num_iteration=clf.best_iteration), axis=1)
     print(classification_report(valid_y, valid_pred, digits=4))
     test_['future_slice_id'] = test_['future_slice_id_substitute']  # 恢复
-    return test_[[id_col, 'current_slice_id', 'future_slice_id', label]], test[[id_col, '1_pred_prob', '2_pred_prob', '3_pred_prob']]
+    return test_[[id_col, 'current_slice_id', 'future_slice_id', label]], test[
+        [id_col, '1_pred_prob', '2_pred_prob', '3_pred_prob']]
 
 
 def get_train_data(num, start=None, end=None):
@@ -127,7 +128,7 @@ if __name__ == "__main__":
         , '20190727': 4876, '20190728': 5260, '20190729': 5367, '20190730': 5344
                     }
     valid = pd.DataFrame()
-    for valid_day, n_row in valid_select.items():
+    for valid_day, n_row in tqdm(valid_select.items()):
         valid_tmp = pd.read_csv(f"is_train_{valid_day}.txt")  # 基本特征
         lstm_feats = pd.read_feather(f"lstm/lstm_feats_{valid_day}.ft")  # lstm特征
         valid_tmp = pd.concat([valid_tmp, lstm_feats], axis=1)
@@ -137,15 +138,38 @@ if __name__ == "__main__":
         valid_tmp.drop(['id', 'preds'], axis=1, inplace=True)
         valid = pd.concat([valid, valid_tmp], axis=0, ignore_index=True)
     del valid_tmp, valid_row, lstm_feats
-    # valid.to_csv("lstm_valid_set.csv")
+    valid.to_csv("lstm_valid_set.csv")
 
-    assert(1 == 0)
+    # assert(1 == 0)
 
-    train = pd.read_csv("is_train_20190704.txt")
-    lstm_feats = pd.read_feather(f"lstm/lstm_feats_20190704.ft")
-    train = pd.concat([train, lstm_feats], axis=1)
+    train_select = {'20190701': 5261, '20190702': 5354, '20190703': 5173, '20190704': 5178, '20190705': 4818,
+                    '20190706': 4818, '20190707': 5128, '20190708': 5150, '20190709': 5001, '20190710': 5302,
+                    '20190711': 5514, '20190712': 5454, '20190713': 5307, '20190714': 5054, '20190715': 5480,
+                    '20190716': 5436, '20190717': 4998, '20190718': 5087, '20190719': 4951, '20190720': 4965,
+                    '20190721': 5284, '20190722': 5346, '20190723': 5102, '20190724': 5075, '20190725': 5367}
+    train = pd.DataFrame()
+    for day, nums in tqdm(train_select.items()):
+        # train_select[day] = nums+5000
+        temp = pd.read_csv(f"is_train_{day}.txt")
+        lstm_feats = pd.read_feather(f"lstm/lstm_feats_{day}.ft")
+        temp = pd.concat([temp, lstm_feats], axis=1)
+        temp['id'] = range(0, temp.shape[0])
+        select_rows = pd.read_csv(f"lstm/test_distribution/adversarial_validation_{day}.csv", nrows=nums)
+        temp = temp.merge(select_rows, on='id', how='right')
+        temp.drop(['id', 'preds'], axis=1, inplace=True)
+        train = pd.concat([train, temp], axis=0, ignore_index=True)
+    # train.to_csv("lstm_train_set.csv")
+
+    # train_day = ['04', '11', '18', '25']
+    # train = pd.DataFrame()
+    # for day in tqdm(train_day):  # 进度条提示
+    #     temp = pd.read_csv(f"is_train_201907{day}.txt")
+    #     lstm_feats = pd.read_feather(f"lstm/lstm_feats_201907{day}.ft")
+    #     temp = pd.concat([temp, lstm_feats], axis=1)
+    #     train = pd.concat([train, temp], axis=0, ignore_index=True)
+
     test = pd.read_csv("is_test.csv")
-    lstm_feats = pd.read_feather(f"lstm/lstm_feats_test.ft")
+    lstm_feats = pd.read_feather("lstm/lstm_feats_test.ft")
     test = pd.concat([test, lstm_feats], axis=1)
 
     # 旧版lstm特征
@@ -163,9 +187,9 @@ if __name__ == "__main__":
     attr = pd.read_csv('attribute.txt', sep='\t',
                        names=['link', 'length', 'direction', 'path_class', 'speed_class', 'LaneNum', 'speed_limit',
                               'level', 'width'], header=None)  # 道路属性
-    
+
     link_static_profiling = pd.read_csv("link_his_fea_no_neighbor.csv", sep=',')  # link静态画像信息
-    
+
     # word2vec_info = pd.read_csv("word2vec_test_3.csv", header=None)  # DeepWalk
     # word2vec_info['link'] = word2vec_info[0].apply(lambda x: x.split(" ")[0])
     # word2vec_info['link'] = word2vec_info['link'].apply(int)  # 类型转换
@@ -182,10 +206,10 @@ if __name__ == "__main__":
     # 天岳
     # link_sum = pd.read_csv("link_time_table_10.csv")
     # link_sum.columns = ['link', 'future_slice_id', 'cnt', '0_prob', '1_prob', '2_prob', '3_prob', '4_prob']
-    link_sum_5 = pd.read_csv("link_time_table_5.csv")
-    link_sum_5.columns = ['link', 'future_slice_id', 'cnt', '0_prob', '1_prob', '2_prob', '3_prob', '4_prob']
-    link_sum_2 = pd.read_csv("link_time_table_2.csv")
-    link_sum_2.columns = ['link', 'future_slice_id', 'cnt', '0_prob', '1_prob', '2_prob', '3_prob', '4_prob']
+    # link_sum_5 = pd.read_csv("link_time_table_5.csv")
+    # link_sum_5.columns = ['link', 'future_slice_id', 'cnt', '0_prob', '1_prob', '2_prob', '3_prob', '4_prob']
+    # link_sum_2 = pd.read_csv("link_time_table_2.csv")
+    # link_sum_2.columns = ['link', 'future_slice_id', 'cnt', '0_prob', '1_prob', '2_prob', '3_prob', '4_prob']
     # 乐天
     link_sum = pd.read_csv("df_sum_table.csv")
     link_sum.drop(index=(len(link_sum) - 1), inplace=True)  # 删除最后一行NAN值
@@ -269,12 +293,12 @@ if __name__ == "__main__":
     valid = valid.merge(link_down_topology, on=['link', 'future_slice_id'], how='left')
 
     # 时间桶：5
-    train['future_slice_id'] = train['future_slice_id_substitute'].apply(lambda x: x / 5).astype(int)
-    test['future_slice_id'] = test['future_slice_id_substitute'].apply(lambda x: int(x / 5))
-    valid['future_slice_id'] = valid['future_slice_id_substitute'].apply(lambda x: int(x / 5))
-    train = train.merge(link_sum_5, on=['link', 'future_slice_id'], how='left')
-    test = test.merge(link_sum_5, on=['link', 'future_slice_id'], how='left')
-    valid = valid.merge(link_sum_5, on=['link', 'future_slice_id'], how='left')
+    # train['future_slice_id'] = train['future_slice_id_substitute'].apply(lambda x: x / 5).astype(int)
+    # test['future_slice_id'] = test['future_slice_id_substitute'].apply(lambda x: int(x / 5))
+    # valid['future_slice_id'] = valid['future_slice_id_substitute'].apply(lambda x: int(x / 5))
+    # train = train.merge(link_sum_5, on=['link', 'future_slice_id'], how='left')
+    # test = test.merge(link_sum_5, on=['link', 'future_slice_id'], how='left')
+    # valid = valid.merge(link_sum_5, on=['link', 'future_slice_id'], how='left')
 
     # 时间桶：2
     # train['future_slice_id'] = train['future_slice_id_substitute'].apply(lambda x: x / 2).astype(int)
@@ -310,7 +334,14 @@ if __name__ == "__main__":
         mean_val = valid[column].mean()
         valid[column].fillna(mean_val, inplace=True)
 
-    use_cols = [i for i in train.columns if i not in ['link', 'label', 'current_slice_id', 'future_slice_id']]  # future_slice_id已有替代特征
+    use_cols = [i for i in train.columns if
+                i not in ['link', 'label', 'current_slice_id']]  # future_slice_id已有替代特征，是否去除
+
+    # valid.to_csv("lstm_valid_set_all.csv", index=False, encoding='utf8')
+    # train.to_csv("lstm_train_set_all.csv", index=False, encoding='utf8')
+    # test.to_csv("lstm_test_set_all.csv", index=False, encoding='utf8')
+
+    # assert(1 == 0)
 
     # 过采样SMOTE：link不作为特征之一
     # model_smote = SMOTE()  # 建立smote模型对象
@@ -358,5 +389,5 @@ if __name__ == "__main__":
 
     sub, label_probs = lgb_train(train, valid, test, use_cols, 'link', 'label', 1, 2.5, 4)
     label_probs.to_csv("label_pred_probability.csv", index=False, encoding='utf8')
-    sub.to_csv('public_baseline_plus_lstm_without_deepwalk.csv', index=False, encoding='utf8')
+    sub.to_csv('results.csv', index=False, encoding='utf8')
 
